@@ -6,6 +6,9 @@
 TCA9548A device1;
 AS5600 sensor;
 
+float pitch_angle = 90;
+float yaw_angle = 90;
+
 class motor
 {
   public:
@@ -55,20 +58,20 @@ class pid
     double output;
     double output_range;
 
-    pid(double p, double i, double d,double range);
+    pid(double p, double i, double d, double range);
     double cal(double in);
     void change_para(double np, double ni, double nd);
     void set_target(double tar);
     void set_range(double range);
 };
-pid::pid(double p, double i, double d,double range)
+pid::pid(double p, double i, double d, double range)
 {
   kp = p; ki = i; kd = d;
   target = 0; input = 0;
   esum = 0; e0 = 0; e1 = 0;
   pe = 0; ie = 0; de = 0;
   output = 0;
-  output_range=range;
+  output_range = range;
 }
 double pid::cal(double in)
 {
@@ -79,7 +82,7 @@ double pid::cal(double in)
   pe = e0;
   ie = esum;
   e1 = e0;
-  output = pe* kp + ie * ki + de * kd;//二阶误差输入
+  output = pe * kp + ie * ki + de * kd; //二阶误差输入
 
   if (output > output_range)
     output = output_range;
@@ -98,7 +101,7 @@ void pid::set_target(double tar)
 }
 void pid::set_range(double range)
 {
-  output_range=range;
+  output_range = range;
 }
 
 
@@ -179,10 +182,10 @@ void encoder::set_dir(int in)
   dir = in;
 }
 
-encoder en_yaw(2),en_pitch(3);
+encoder en_yaw(2), en_pitch(3);
 pid pid_yaw(3.5, 0.001, 6, 255), pid_pitch(3.5, 0.001, 6, 255);
-motor motor_yaw(9,10,1),motor_pitch(5,6,1);
-double angle_test=0;
+motor motor_yaw(9, 10, 1), motor_pitch(5, 6, 1);
+double angle_test = 0;
 
 union float2byte {
   float f; byte b[sizeof(float)];
@@ -193,26 +196,49 @@ void setup()
   Serial.begin(115200);
   device1.init();//init the unversial tca device
 
-  en_yaw.set_offset(-353.58+90);
-  en_pitch.set_offset(-278.53+90);
+  en_yaw.set_offset(-353.58 + 90);
+  en_pitch.set_offset(-278.53 + 90);
+}
+
+float clip(float in, float limit_up,float limit_down)
+{
+  if (in > limit_up)
+    in = limit_up;
+  if (in < limit_down)
+    in = limit_down;
+  return in;
+}
+
+void pos_update()
+{
+  en_yaw.get_anglepro();
+  en_pitch.get_anglepro();
+
+  pid_yaw.set_target(clip(pitch_angle,90+50,90-50));
+  pid_pitch.set_target(clip(yaw_angle,90+50,90-50));
+
+  motor_yaw.pwm_run(pid_yaw.cal(en_yaw.angle_pro));
+  motor_pitch.pwm_run(pid_pitch.cal(en_pitch.angle_pro));
 }
 
 void loop()
 {
-  if(angle_test>360)
-    angle_test=360;
-  en_yaw.get_anglepro();
-  en_pitch.get_anglepro();
+  if (Serial.available() > 0)
+  {
+    if (Serial.read() == 'X')
+    {
+      pitch_angle = Serial.parseInt();
+      if (Serial.read() == 'Y')
+      {
+        yaw_angle = Serial.parseInt();
+        pos_update();
+      }
+    }
+    while (Serial.available() > 0)
+    {
+      Serial.read();
+      pos_update();
+    }
+  }
 
-  pid_yaw.set_target(90+50*sin(angle_test));
-  pid_pitch.set_target(90+50*cos(angle_test));
-  
-  motor_yaw.pwm_run(pid_yaw.cal(en_yaw.angle_pro));
-  motor_pitch.pwm_run(pid_pitch.cal(en_pitch.angle_pro));
-  
-  //Serial.println(en_yaw.angle_pro);
-  //Serial.println(en_pitch.angle_pro);
-  //Serial.println("test");
-
-  angle_test+=0.004;
 }
